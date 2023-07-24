@@ -15,13 +15,13 @@ import (
 
 var (
 	sugar   *zap.SugaredLogger
-  logCounter = promauto.NewCounterVec(
-    prometheus.CounterOpts{
-      Name: "logger_logs_total",
-      Help: "Number of logs emitted with a type label",
-    },
-    []string{"type"},
-  )
+	logCounter = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+		Name: "logger_logs_total",
+		Help: "Number of logs emitted with a type label",
+		},
+		[]string{"type"},
+	)
 
 )
 
@@ -42,6 +42,24 @@ func init() {
 
 	defer logger.Sync()
 	sugar = logger.Sugar()
+}
+
+// SetNamespace sets the namespace and subsystem for the logger metrics.
+// This should be called before any logging is done.
+// Namespace is the first part of the metric name, and subsystem is the second.
+// Namespace should be your application name, and subsystem should be the
+// component of your application that is doing the logging.
+func SetNamespace(namespace, subsystem string) {
+	logCounter = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+		Name: "logs_total",
+		Help: "Number of logs emitted with a type label",
+		Namespace: namespace,
+		Subsystem: subsystem,
+		},
+		[]string{"type"},
+	)
+
 }
 
 func Debug(msg string, keysAndValues ...interface{}) {
