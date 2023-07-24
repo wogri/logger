@@ -52,10 +52,10 @@ func init() {
 func SetNamespace(namespace, subsystem string) {
 	logCounter = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-		Name: "logs_total",
-		Help: "Number of logs emitted with a type label",
-		Namespace: namespace,
-		Subsystem: subsystem,
+			Name: "logs_total",
+			Help: "Number of logs emitted with a type label",
+			Namespace: namespace,
+			Subsystem: subsystem,
 		},
 		[]string{"type"},
 	)
