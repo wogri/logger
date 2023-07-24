@@ -14,7 +14,8 @@ import (
 )
 
 var (
-	sugar   *zap.SugaredLogger
+	sugar *zap.SugaredLogger
+	debugmode bool
 	logCounter = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 		Name: "logger_logs_total",
@@ -33,6 +34,7 @@ func init() {
 	level := zapcore.InfoLevel
 	if os.Getenv("VERBOSE") != "" {
 		level = zapcore.DebugLevel
+		debugmode = true
 	}
 	logger := zap.New(zapcore.NewCore(
 		zaplogfmt.NewEncoder(config),
@@ -64,7 +66,9 @@ func SetNamespace(namespace, subsystem string) {
 
 func Debug(msg string, keysAndValues ...interface{}) {
 	sugar.Debugw(msg, keysAndValues...)
-  logCounter.WithLabelValues("Debug").Inc()
+	if debugmode {
+ 		logCounter.WithLabelValues("Debug").Inc()
+	}
 }
 
 func Info(msg string, keysAndValues ...interface{}) {
