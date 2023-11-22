@@ -7,6 +7,8 @@ import (
 	"time"
 
 	zaplogfmt "github.com/sykesm/zap-logfmt"
+	// zap json
+
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"github.com/prometheus/client_golang/prometheus"
@@ -36,11 +38,20 @@ func init() {
 		level = zapcore.DebugLevel
 		debugmode = true
 	}
-	logger := zap.New(zapcore.NewCore(
-		zaplogfmt.NewEncoder(config),
-		os.Stdout,
-		level,
-	), zap.AddCaller(), zap.AddCallerSkip(1))
+	var logger *zap.Logger
+	if os.Getenv("PRODUCTION") == "" {
+		logger = zap.New(zapcore.NewCore(
+			zaplogfmt.NewEncoder(config),
+			os.Stdout,
+			level,
+		), zap.AddCaller(), zap.AddCallerSkip(1))
+	} else {
+		logger = zap.New(zapcore.NewCore(
+			zapcore.NewJSONEncoder(config),
+			os.Stdout,
+			level,
+		), zap.AddCaller(), zap.AddCallerSkip(1))
+	}
 
 	defer logger.Sync()
 	sugar = logger.Sugar()
