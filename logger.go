@@ -9,23 +9,23 @@ import (
 	zaplogfmt "github.com/sykesm/zap-logfmt"
 	// zap json
 
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 var (
-	sugar *zap.SugaredLogger
-	debugmode bool
+	sugar      *zap.SugaredLogger
+	sugarCallerSkip1 *zap.SugaredLogger
+	debugmode  bool
 	logCounter = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-		Name: "logger_logs_total",
-		Help: "Number of logs emitted with a type label",
+			Name: "logger_logs_total",
+			Help: "Number of logs emitted with a type label",
 		},
 		[]string{"type"},
 	)
-
 )
 
 func init() {
@@ -39,22 +39,35 @@ func init() {
 		debugmode = true
 	}
 	var logger *zap.Logger
+	var loggerSkip *zap.Logger
 	if os.Getenv("PRODUCTION") == "" {
 		logger = zap.New(zapcore.NewCore(
 			zaplogfmt.NewEncoder(config),
 			os.Stdout,
 			level,
 		), zap.AddCaller(), zap.AddCallerSkip(1))
+		loggerSkip = zap.New(zapcore.NewCore(
+			zaplogfmt.NewEncoder(config),
+			os.Stdout,
+			level,
+		), zap.AddCaller(), zap.AddCallerSkip(2))
 	} else {
 		logger = zap.New(zapcore.NewCore(
 			zapcore.NewJSONEncoder(config),
 			os.Stdout,
 			level,
 		), zap.AddCaller(), zap.AddCallerSkip(1))
+		loggerSkip = zap.New(zapcore.NewCore(
+			zapcore.NewJSONEncoder(config),
+			os.Stdout,
+			level,
+		), zap.AddCaller(), zap.AddCallerSkip(2))
 	}
 
 	defer logger.Sync()
+	defer loggerSkip.Sync()
 	sugar = logger.Sugar()
+	sugarCallerSkip1 = loggerSkip.Sugar()
 }
 
 // SetNamespace sets the namespace and subsystem for the logger metrics.
@@ -65,8 +78,8 @@ func init() {
 func SetNamespace(namespace, subsystem string) {
 	logCounter = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "logs_total",
-			Help: "Number of logs emitted with a type label",
+			Name:      "logs_total",
+			Help:      "Number of logs emitted with a type label",
 			Namespace: namespace,
 			Subsystem: subsystem,
 		},
@@ -78,24 +91,29 @@ func SetNamespace(namespace, subsystem string) {
 func Debug(msg string, keysAndValues ...interface{}) {
 	sugar.Debugw(msg, keysAndValues...)
 	if debugmode {
- 		logCounter.WithLabelValues("Debug").Inc()
+		logCounter.WithLabelValues("Debug").Inc()
 	}
 }
 
 func Info(msg string, keysAndValues ...interface{}) {
 	sugar.Infow(msg, keysAndValues...)
-  logCounter.WithLabelValues("Info").Inc()
+	logCounter.WithLabelValues("Info").Inc()
 }
 
 func Error(msg string, keysAndValues ...interface{}) {
 	sugar.Errorw(msg, keysAndValues...)
-  logCounter.WithLabelValues("Error").Inc()
+	logCounter.WithLabelValues("Error").Inc()
+}
+
+func ErrorSkipOne(msg string, keysAndValues ...interface{}) {
+	sugarCallerSkip1.Errorw(msg, keysAndValues...)
+	logCounter.WithLabelValues("Error").Inc()
 }
 
 func Fatal(msg string, keysAndValues ...interface{}) {
 	sugar.Fatalw(msg, keysAndValues...)
-  // We're doing this although it's not useful.
-  logCounter.WithLabelValues("Fatal").Inc()
+	// We're doing this although it's not useful.
+	logCounter.WithLabelValues("Fatal").Inc()
 }
 
 func Sync() {
