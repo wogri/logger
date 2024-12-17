@@ -33,7 +33,7 @@ func init() {
 	config.EncodeTime = func(ts time.Time, encoder zapcore.PrimitiveArrayEncoder) {
 		encoder.AppendString(ts.UTC().Format(time.RFC3339Nano))
 	}
-	config.EncodeLevel = zapcore.CapitalColorLevelEncoder
+	// config.EncodeLevel = zapcore.CapitalColorLevelEncoder
 	level := zapcore.InfoLevel
 	if os.Getenv("VERBOSE") != "" {
 		level = zapcore.DebugLevel
