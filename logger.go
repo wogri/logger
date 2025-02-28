@@ -18,6 +18,9 @@ import (
 var (
 	sugar      *zap.SugaredLogger
 	sugarCallerSkip1 *zap.SugaredLogger
+	sugarDisk *zap.SugaredLogger
+	sugarDiskSkipOne *zap.SugaredLogger
+	logToDisk bool
 	debugmode  bool
 	logCounter = promauto.NewCounterVec(
 		prometheus.CounterOpts{
@@ -89,32 +92,81 @@ func SetNamespace(namespace, subsystem string) {
 
 }
 
+func SetLogToDisk(filename string) {
+	logToDisk = true
+	config := zap.NewProductionEncoderConfig()
+	config.EncodeTime = func(ts time.Time, encoder zapcore.PrimitiveArrayEncoder) {
+		encoder.AppendString(ts.UTC().Format(time.RFC3339Nano))
+	}
+	level := zapcore.InfoLevel
+	if os.Getenv("VERBOSE") != "" {
+		level = zapcore.DebugLevel
+		debugmode = true
+	}
+	// set up the WriteSyncer for the file
+	file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		sugar.Fatalw("Failed to open log file", "error", err)
+	}
+	// create a zapcore.WriteSyncer that writes to the file
+	fileSyncer := zapcore.AddSync(file)
+	// create a zapcore.Core that writes to the file
+	diskLogger := zap.New(zapcore.NewCore(
+		zaplogfmt.NewEncoder(config),
+		fileSyncer,
+		level,
+	), zap.AddCaller(), zap.AddCallerSkip(1))
+	sugarDisk = diskLogger.Sugar()
+
+	diskLoggerSkip := zap.New(zapcore.NewCore(
+		zaplogfmt.NewEncoder(config),
+		fileSyncer,
+		level,
+	), zap.AddCaller(), zap.AddCallerSkip(2))
+	sugarDiskSkipOne = diskLoggerSkip.Sugar()
+}
+
 func Debug(msg string, keysAndValues ...interface{}) {
 	sugar.Debugw(msg, keysAndValues...)
 	if debugmode {
 		logCounter.WithLabelValues("Debug").Inc()
+	}
+	if logToDisk {
+		sugarDisk.Debugw(msg, keysAndValues...)
 	}
 }
 
 func Info(msg string, keysAndValues ...interface{}) {
 	sugar.Infow(msg, keysAndValues...)
 	logCounter.WithLabelValues("Info").Inc()
+	if logToDisk {
+		sugarDisk.Infow(msg, keysAndValues...)
+	}
 }
 
 func Error(msg string, keysAndValues ...interface{}) {
 	sugar.Errorw(msg, keysAndValues...)
 	logCounter.WithLabelValues("Error").Inc()
+	if logToDisk {
+		sugarDisk.Errorw(msg, keysAndValues...)
+	}
 }
 
 func ErrorSkipOne(msg string, keysAndValues ...interface{}) {
 	sugarCallerSkip1.Errorw(msg, keysAndValues...)
 	logCounter.WithLabelValues("Error").Inc()
+	if logToDisk {
+		sugarDiskSkipOne.Errorw(msg, keysAndValues...)
+	}
 }
 
 func Fatal(msg string, keysAndValues ...interface{}) {
-	sugar.Fatalw(msg, keysAndValues...)
-	// We're doing this although it's not useful.
 	logCounter.WithLabelValues("Fatal").Inc()
+	if logToDisk {
+		sugarDisk.Fatalw(msg, keysAndValues...)
+	}
+	// We're doing this although it's not useful.
+	sugar.Fatalw(msg, keysAndValues...)
 }
 
 func Sync() {
