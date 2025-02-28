@@ -44,29 +44,24 @@ func init() {
 	}
 	var logger *zap.Logger
 	var loggerSkip *zap.Logger
+	var encoder zapcore.Encoder
+
 	if os.Getenv("PRODUCTION") == "" {
-		logger = zap.New(zapcore.NewCore(
-			zaplogfmt.NewEncoder(config),
-			os.Stdout,
-			level,
-		), zap.AddCaller(), zap.AddCallerSkip(1))
-		loggerSkip = zap.New(zapcore.NewCore(
-			zaplogfmt.NewEncoder(config),
-			os.Stdout,
-			level,
-		), zap.AddCaller(), zap.AddCallerSkip(2))
+		encoder = zaplogfmt.NewEncoder(config)
 	} else {
-		logger = zap.New(zapcore.NewCore(
-			zapcore.NewJSONEncoder(config),
-			os.Stdout,
-			level,
-		), zap.AddCaller(), zap.AddCallerSkip(1))
-		loggerSkip = zap.New(zapcore.NewCore(
-			zapcore.NewJSONEncoder(config),
-			os.Stdout,
-			level,
-		), zap.AddCaller(), zap.AddCallerSkip(2))
+		encoder = zapcore.NewJSONEncoder(config)
 	}
+
+	logger = zap.New(zapcore.NewCore(
+		encoder,
+		os.Stdout,
+		level,
+	), zap.AddCaller(), zap.AddCallerSkip(1))
+	loggerSkip = zap.New(zapcore.NewCore(
+		encoder,
+		os.Stdout,
+		level,
+	), zap.AddCaller(), zap.AddCallerSkip(2))
 
 	defer logger.Sync()
 	defer loggerSkip.Sync()
@@ -89,7 +84,6 @@ func SetNamespace(namespace, subsystem string) {
 		},
 		[]string{"type"},
 	)
-
 }
 
 func SetLogToDisk(filename string) {
@@ -111,8 +105,16 @@ func SetLogToDisk(filename string) {
 	// create a zapcore.WriteSyncer that writes to the file
 	fileSyncer := zapcore.AddSync(file)
 	// create a zapcore.Core that writes to the file
+
+	var encoder zapcore.Encoder
+	if os.Getenv("PRODUCTION") == "" {
+		encoder = zaplogfmt.NewEncoder(config)
+	} else {
+		encoder = zapcore.NewJSONEncoder(config)
+	}
+
 	diskLogger := zap.New(zapcore.NewCore(
-		zaplogfmt.NewEncoder(config),
+		encoder,
 		fileSyncer,
 		level,
 	), zap.AddCaller(), zap.AddCallerSkip(1))
