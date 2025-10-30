@@ -138,11 +138,29 @@ func Debug(msg string, keysAndValues ...interface{}) {
 	}
 }
 
+func DebugSkipOne(msg string, keysAndValues ...interface{}) {
+	sugarCallerSkip1.Debugw(msg, keysAndValues...)
+	if debugmode {
+		logCounter.WithLabelValues("Debug").Inc()
+	}
+	if logToDisk {
+		sugarDiskSkipOne.Debugw(msg, keysAndValues...)
+	}
+}
+
 func Info(msg string, keysAndValues ...interface{}) {
 	sugar.Infow(msg, keysAndValues...)
 	logCounter.WithLabelValues("Info").Inc()
 	if logToDisk {
 		sugarDisk.Infow(msg, keysAndValues...)
+	}
+}
+
+func InfoSkipOne(msg string, keysAndValues ...interface{}) {
+	sugarCallerSkip1.Infow(msg, keysAndValues...)
+	logCounter.WithLabelValues("Info").Inc()
+	if logToDisk {
+		sugarDiskSkipOne.Infow(msg, keysAndValues...)
 	}
 }
 
