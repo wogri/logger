@@ -3,7 +3,9 @@ package logger
 // This is a logging module that enforces structured logging and emits prom metrics.
 
 import (
+	"io"
 	"os"
+	"sync"
 	"time"
 
 	zaplogfmt "github.com/sykesm/zap-logfmt"
@@ -16,20 +18,63 @@ import (
 )
 
 var (
-	sugar      *zap.SugaredLogger
+	sugar            *zap.SugaredLogger
 	sugarCallerSkip1 *zap.SugaredLogger
-	sugarDisk *zap.SugaredLogger
+	sugarDisk        *zap.SugaredLogger
 	sugarDiskSkipOne *zap.SugaredLogger
-	logToDisk bool
-	debugmode  bool
-	logCounter = promauto.NewCounterVec(
+	logToDisk        bool
+	debugmode        bool
+	logCounter       = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "logger_logs_total",
 			Help: "Number of logs emitted with a type label",
 		},
 		[]string{"type"},
 	)
+	broadcast = &broadcastSyncer{}
 )
+
+// broadcastSyncer is a zapcore.WriteSyncer that fans out writes to registered
+// io.Writer subscribers. It is safe for concurrent use.
+type broadcastSyncer struct {
+	mu          sync.RWMutex
+	subscribers map[int]io.Writer
+	nextID      int
+}
+
+// Write sends p to all registered subscribers. Errors from individual
+// subscribers are silently ignored so that a slow or broken subscriber
+// cannot disrupt the main log pipeline.
+func (b *broadcastSyncer) Write(p []byte) (int, error) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	for _, w := range b.subscribers {
+		w.Write(p) //nolint:errcheck
+	}
+	return len(p), nil
+}
+
+// Sync is a no-op; subscribers are responsible for their own flushing.
+func (b *broadcastSyncer) Sync() error { return nil }
+
+// RegisterWriter adds w as a log subscriber. Every log line written by the
+// logger will be copied to w as JSON. The returned function removes the
+// subscription when called.
+func RegisterWriter(w io.Writer) func() {
+	broadcast.mu.Lock()
+	defer broadcast.mu.Unlock()
+	if broadcast.subscribers == nil {
+		broadcast.subscribers = make(map[int]io.Writer)
+	}
+	id := broadcast.nextID
+	broadcast.nextID++
+	broadcast.subscribers[id] = w
+	return func() {
+		broadcast.mu.Lock()
+		defer broadcast.mu.Unlock()
+		delete(broadcast.subscribers, id)
+	}
+}
 
 func init() {
 	config := zap.NewProductionEncoderConfig()
@@ -42,8 +87,6 @@ func init() {
 		level = zapcore.DebugLevel
 		debugmode = true
 	}
-	var logger *zap.Logger
-	var loggerSkip *zap.Logger
 	var encoder zapcore.Encoder
 
 	if os.Getenv("PRODUCTION") == "" {
@@ -52,16 +95,15 @@ func init() {
 		encoder = zapcore.NewJSONEncoder(config)
 	}
 
-	logger = zap.New(zapcore.NewCore(
-		encoder,
-		os.Stdout,
-		level,
-	), zap.AddCaller(), zap.AddCallerSkip(1))
-	loggerSkip = zap.New(zapcore.NewCore(
-		encoder,
-		os.Stdout,
-		level,
-	), zap.AddCaller(), zap.AddCallerSkip(2))
+	// JSON encoder for the broadcast syncer — subscribers always receive JSON.
+	broadcastEncoder := zapcore.NewJSONEncoder(config)
+	broadcastCore := zapcore.NewCore(broadcastEncoder, broadcast, zapcore.DebugLevel)
+
+	stdoutCore := zapcore.NewCore(encoder, os.Stdout, level)
+	stdoutCoreSkip := zapcore.NewCore(encoder, os.Stdout, level)
+
+	logger := zap.New(zapcore.NewTee(stdoutCore, broadcastCore), zap.AddCaller(), zap.AddCallerSkip(1))
+	loggerSkip := zap.New(zapcore.NewTee(stdoutCoreSkip, broadcastCore), zap.AddCaller(), zap.AddCallerSkip(2))
 
 	defer logger.Sync()
 	defer loggerSkip.Sync()
